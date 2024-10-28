@@ -1,0 +1,59 @@
+{% set unique_vlans = [] %}
+
+{%- for interface in device.interfaces.all() -%}
+  {%- for vlan in interface.tagged_vlans.all() -%}
+    {%- if vlan not in unique_vlans -%}
+      {%- set _ = unique_vlans.append(vlan) -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {% if interface.untagged_vlan and interface.untagged_vlan not in unique_vlans %}
+    {%- set _ = unique_vlans.append(interface.untagged_vlan) -%}
+  {%- endif -%}
+{%- endfor -%}
+
+{# Выводим уникальные VLANы #}
+{% for vlan in unique_vlans %}
+  vlan {{ vlan.vid }}
+  name {{ vlan.name }}
+{% endfor %}
+
+! Interfaces:
+{%- for interface in device.interfaces.all() %}
+interface {{ interface.name }}
+! shut / no shut interface
+  {%- if interface.enabled == false %}
+  shutdown 
+  {%- elif interface.enabled == true %}
+  no shutdown 
+  {%- endif %}
+! Access / Trunk 
+  {%- if interface.mode == "access" and interface.untagged_vlan is not none %}
+  switchport mode access
+  switchport access vlan {{ interface.untagged_vlan.vid }}
+  {%- elif interface.mode == "tagged" and interface.tagged_vlans.all()|length == 0 %}
+  switchport mode acces
+  switchport acces vlan none
+  {%- elif interface.mode == "tagged" and interface.untagged_vlan is none %}
+  switchport mode trunk 
+  {%- for vl in interface.tagged_vlans.all() %}
+  switchport trunk allowed vlan add {{ vl.vid }}
+  {%- endfor %}
+  {%- elif interface.mode == "tagged" and interface.untagged_vlan is not none %}
+  switchport mode trunk 
+  {%- for vl in interface.tagged_vlans.all() %}
+  switchport trunk allowed vlan add {{ vl.vid }}
+  {%- endfor %}
+  switchport native vlan {{ interface.untagged_vlan.vid }}
+  {%- elif "tagged-all" in interface.mode %}
+  switchport mode trunk
+  switchport trunk allowed vlan all 
+  {%- else %}
+  switchport mode acces
+  switchport acces vlan none
+  {%- endif %}
+! Description only if not empty
+  {%- if interface.description|length %}
+  description {{ interface.description }}
+  {%- endif %}
+!  
+{%- endfor %}
